@@ -135,7 +135,7 @@ func (s *batchStrategy) flushBuffer(outputChan chan *message.Payload) {
 func (s *batchStrategy) sendMessages(messages []*message.Message, outputChan chan *message.Payload) {
 	serializedMessage := s.serializer.Serialize(messages)
 	log.Debugf("Send messages (msg_count:%d, content_size=%d, avg_msg_size=%.2f)", len(messages), len(serializedMessage), float64(len(serializedMessage))/float64(len(messages)))
-
+	log.Infof("Logs-Print: %v", string(serializedMessage))
 	encodedPayload, err := s.contentEncoding.encode(serializedMessage)
 	if err != nil {
 		log.Warn("Encoding failed - dropping payload", err)
