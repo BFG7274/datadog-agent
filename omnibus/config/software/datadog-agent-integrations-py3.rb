@@ -45,7 +45,7 @@ whitelist_file "embedded/lib/python3.8/site-packages/aerospike.libs"
 whitelist_file "embedded/lib/python3.8/site-packages/psycopg2"
 whitelist_file "embedded/lib/python3.8/site-packages/pymqi"
 
-source git: 'https://github.com/DataDog/integrations-core.git'
+source git: 'https://github.com/BFG7274/integrations-core.git'
 
 integrations_core_version = ENV['INTEGRATIONS_CORE_VERSION']
 if integrations_core_version.nil? || integrations_core_version.empty?
