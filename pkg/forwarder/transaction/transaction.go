@@ -7,11 +7,13 @@ package transaction
 
 import (
 	"bytes"
+	"compress/zlib"
 	"context"
 	"crypto/tls"
 	"expvar"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptrace"
 	"strconv"
@@ -268,7 +270,7 @@ func (t *HTTPTransaction) GetPayloadSize() int {
 func (t *HTTPTransaction) Process(ctx context.Context, client *http.Client) error {
 	t.AttemptHandler(t)
 
-	statusCode, body, err := t.internalProcess(ctx, client)
+	statusCode, body, err := t.internalProcessMock(ctx, client)
 
 	if err == nil || !t.Retryable {
 		t.CompletionHandler(t, statusCode, body, err)
@@ -399,4 +401,67 @@ func truncateBodyForLog(body []byte) []byte {
 		return body
 	}
 	return append(body[:limit], []byte("...")...)
+}
+
+func decompressPayload(payload []byte) (string, error) {
+	r, err := zlib.NewReader(bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+
+	dst, err := ioutil.ReadAll(r)
+	if err != nil {
+		return "", err
+	}
+	return string(dst), nil
+}
+
+func (t *HTTPTransaction) internalProcessMock(ctx context.Context, client *http.Client) (int, []byte, error) {
+	logEnable := true
+	if logEnable {
+		strPayload, err := decompressPayload(*t.Payload)
+		if err != nil {
+			strPayload = string(*t.Payload)
+		}
+		log.Infof("Mertics-Print: %v", strPayload)
+	}
+	url := t.Domain + t.Endpoint.Route
+	transactionEndpointName := t.GetEndpointName()
+	logURL := scrubber.ScrubLine(url) // sanitized url that can be logged
+	body := make([]byte, 0, 512)
+	if transactionEndpointName == "intake" {
+		body = []byte("Accepted")
+	} else if transactionEndpointName == "check_run_v1" || transactionEndpointName == "series_v1" {
+		body = []byte("{\"status\": \"ok\"}")
+	}
+
+	// send kafka message
+	if transactionEndpointName == "series_v1" {
+		// log.Infof("send kafka msg...")
+		// go func() {
+		// 	utils.SendKafka("api_v1_series", *t.Payload)
+		// }()
+	}
+
+	tlmTxSuccessCount.Inc(t.Domain, transactionEndpointName)
+	tlmTxSuccessBytes.Add(float64(t.GetPayloadSize()), t.Domain, transactionEndpointName)
+	TransactionsSuccessByEndpoint.Add(transactionEndpointName, 1)
+	transactionsSuccessBytesByEndpoint.Add(transactionEndpointName, int64(t.GetPayloadSize()))
+	transactionsSuccess.Add(1)
+
+	loggingFrequency := config.Datadog.GetInt64("logging_frequency")
+
+	if transactionsSuccess.Value() == 1 {
+		log.Infof("Successfully posted payload to %q, the agent will only log transaction success every %d transactions", logURL, loggingFrequency)
+		log.Tracef("Url: %q payload: %q", logURL, truncateBodyForLog(body))
+		return 202, body, nil
+	}
+	if transactionsSuccess.Value()%loggingFrequency == 0 {
+		log.Infof("Successfully posted payload to %q", logURL)
+		log.Tracef("Url: %q payload: %q", logURL, truncateBodyForLog(body))
+		return 202, body, nil
+	}
+	log.Tracef("Successfully posted payload to %q: %q", logURL, truncateBodyForLog(body))
+	return 202, body, nil
 }
