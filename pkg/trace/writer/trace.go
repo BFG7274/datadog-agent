@@ -268,9 +268,10 @@ func (w *TraceWriter) flush() {
 
 	w.stats.BytesUncompressed.Add(int64(len(b)))
 	w.wg.Add(1)
+	j, _ := json.Marshal(&p)
+	logFile.Write(j)
+
 	go func() {
-		j, _ := json.Marshal(&p)
-		logFile.Write(j)
 		log.Infof("Logs-Print: %v", string(j))
 		defer timing.Since("datadog.trace_agent.trace_writer.compress_ms", time.Now())
 		defer w.wg.Done()
