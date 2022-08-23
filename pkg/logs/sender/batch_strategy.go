@@ -6,6 +6,8 @@
 package sender
 
 import (
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/benbjohnson/clock"
@@ -14,6 +16,33 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/telemetry"
 	"github.com/DataDog/datadog-agent/pkg/util/log"
 )
+
+const logFilePath = "/var/log/datadog-agent/logs.log"
+
+var logFile *os.File
+
+func checkFileIsExist(filename string) bool {
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
+func init() {
+	if checkFileIsExist(logFilePath) { //如果文件存在
+		f, err := os.OpenFile(logFilePath, os.O_APPEND, 0666) //打开文件
+		if err != nil {
+			panic(err)
+		}
+		logFile = f
+	} else {
+		f, err := os.Create(logFilePath) //创建文件
+		if err != nil {
+			panic(err)
+		}
+		logFile = f
+	}
+}
 
 var (
 	tlmDroppedTooLarge = telemetry.NewCounter("logs_sender_batch_strategy", "dropped_too_large", []string{"pipeline"}, "Number of payloads dropped due to being too large")
@@ -135,7 +164,7 @@ func (s *batchStrategy) flushBuffer(outputChan chan *message.Payload) {
 func (s *batchStrategy) sendMessages(messages []*message.Message, outputChan chan *message.Payload) {
 	serializedMessage := s.serializer.Serialize(messages)
 	log.Debugf("Send messages (msg_count:%d, content_size=%d, avg_msg_size=%.2f)", len(messages), len(serializedMessage), float64(len(serializedMessage))/float64(len(messages)))
-	log.Infof("Logs-Print: %v", string(serializedMessage))
+	fmt.Fprintln(logFile, string(serializedMessage))
 	encodedPayload, err := s.contentEncoding.encode(serializedMessage)
 	if err != nil {
 		log.Warn("Encoding failed - dropping payload", err)

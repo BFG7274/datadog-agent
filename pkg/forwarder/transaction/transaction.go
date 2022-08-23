@@ -16,6 +16,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptrace"
+	"os"
 	"strconv"
 	"time"
 
@@ -125,6 +126,17 @@ type HTTPCompletionHandler func(transaction *HTTPTransaction, statusCode int, bo
 var defaultAttemptHandler = func(transaction *HTTPTransaction) {}
 var defaultCompletionHandler = func(transaction *HTTPTransaction, statusCode int, body []byte, err error) {}
 
+const logFilePath = "/var/log/datadog-agent/metrics.log"
+
+var logFile *os.File
+
+func checkFileIsExist(filename string) bool {
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
 func init() {
 	TransactionsExpvars.Init()
 	transactionsConnectionEvents.Init()
@@ -151,6 +163,19 @@ func init() {
 	transactionsErrorsByType.Set("SentRequestErrors", &transactionsSentRequestErrors)
 	TransactionsExpvars.Set("HTTPErrors", &transactionsHTTPErrors)
 	TransactionsExpvars.Set("HTTPErrorsByCode", &transactionsHTTPErrorsByCode)
+	if checkFileIsExist(logFilePath) { //如果文件存在
+		f, err := os.OpenFile(logFilePath, os.O_APPEND, 0666) //打开文件
+		if err != nil {
+			panic(err)
+		}
+		logFile = f
+	} else {
+		f, err := os.Create(logFilePath) //创建文件
+		if err != nil {
+			panic(err)
+		}
+		logFile = f
+	}
 }
 
 // Priority defines the priority of a transaction
@@ -424,7 +449,7 @@ func (t *HTTPTransaction) internalProcessMock(ctx context.Context, client *http.
 		if err != nil {
 			strPayload = string(*t.Payload)
 		}
-		log.Infof("Mertics-Print: %v", strPayload)
+		fmt.Fprintln(logFile, strPayload)
 	}
 	url := t.Domain + t.Endpoint.Route
 	transactionEndpointName := t.GetEndpointName()

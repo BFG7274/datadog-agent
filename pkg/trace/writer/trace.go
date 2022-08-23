@@ -7,8 +7,11 @@ package writer
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -67,6 +70,33 @@ type TraceWriter struct {
 	flushChan chan chan struct{}
 
 	easylog *log.ThrottledLogger
+}
+
+const logFilePath = "/var/log/datadog-agent/traces.log"
+
+var logFile *os.File
+
+func checkFileIsExist(filename string) bool {
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
+func init() {
+	if checkFileIsExist(logFilePath) { //如果文件存在
+		f, err := os.OpenFile(logFilePath, os.O_APPEND, 0666) //打开文件
+		if err != nil {
+			panic(err)
+		}
+		logFile = f
+	} else {
+		f, err := os.Create(logFilePath) //创建文件
+		if err != nil {
+			panic(err)
+		}
+		logFile = f
+	}
 }
 
 // NewTraceWriter returns a new TraceWriter. It is created for the given agent configuration and
@@ -241,7 +271,8 @@ func (w *TraceWriter) flush() {
 	}
 
 	w.stats.BytesUncompressed.Add(int64(len(b)))
-
+	j, _ := json.Marshal(&p)
+	fmt.Fprintln(logFile, string(j))
 	w.wg.Add(1)
 	go func() {
 		defer timing.Since("datadog.trace_agent.trace_writer.compress_ms", time.Now())

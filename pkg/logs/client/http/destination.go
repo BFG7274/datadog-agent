@@ -170,6 +170,9 @@ func (d *Destination) run(input chan *message.Payload, output chan *message.Payl
 	var startIdle = time.Now()
 
 	for p := range input {
+		p.Encoded = []byte{}
+		log.Infof("logs-print: ", p)
+		return
 		idle := float64(time.Since(startIdle) / time.Millisecond)
 		d.expVars.AddFloat(expVarIdleMsMapKey, idle)
 		tlmIdle.Add(idle, d.telemetryName)
