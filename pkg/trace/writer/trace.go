@@ -84,19 +84,12 @@ func checkFileIsExist(filename string) bool {
 }
 
 func init() {
-	if checkFileIsExist(logFilePath) { //如果文件存在
-		f, err := os.OpenFile(logFilePath, os.O_APPEND, 0666) //打开文件
-		if err != nil {
-			panic(err)
-		}
-		writer = bufio.NewWriter(f)
-	} else {
-		f, err := os.Create(logFilePath) //创建文件
-		if err != nil {
-			panic(err)
-		}
-		writer = bufio.NewWriter(f)
+	f, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE, 0666)
+	if err != nil {
+		panic(err)
 	}
+	writer = bufio.NewWriter(f)
+	defer f.Close()
 }
 
 // NewTraceWriter returns a new TraceWriter. It is created for the given agent configuration and
