@@ -96,7 +96,6 @@ func init() {
 			panic(err)
 		}
 		writer = bufio.NewWriter(f)
-
 	}
 }
 
