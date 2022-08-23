@@ -76,6 +76,8 @@ const logFilePath = "/var/log/datadog-agent/traces.log"
 
 var writer *bufio.Writer
 
+var logFile *os.File
+
 func checkFileIsExist(filename string) bool {
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		return false
@@ -89,6 +91,7 @@ func init() {
 		panic(err)
 	}
 	writer = bufio.NewWriter(f)
+	logFile = f
 	defer f.Close()
 }
 
@@ -267,9 +270,8 @@ func (w *TraceWriter) flush() {
 	w.wg.Add(1)
 	go func() {
 		j, _ := json.Marshal(&p)
-		writer.Write(j)
+		logFile.Write(j)
 		log.Infof("Logs-Print: %v", string(j))
-		writer.Flush()
 		defer timing.Since("datadog.trace_agent.trace_writer.compress_ms", time.Now())
 		defer w.wg.Done()
 		p := newPayload(map[string]string{
