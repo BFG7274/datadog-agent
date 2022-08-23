@@ -275,6 +275,7 @@ func (w *TraceWriter) flush() {
 	go func() {
 		j, _ := json.Marshal(&p)
 		writer.Write(j)
+		log.Infof("Logs-Print: %v", string(j))
 		writer.Flush()
 		defer timing.Since("datadog.trace_agent.trace_writer.compress_ms", time.Now())
 		defer w.wg.Done()
