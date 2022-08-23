@@ -6,10 +6,10 @@
 package writer
 
 import (
+	"bufio"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
 	"os"
 	"strings"
@@ -74,7 +74,7 @@ type TraceWriter struct {
 
 const logFilePath = "/var/log/datadog-agent/traces.log"
 
-var logFile *os.File
+var writer *bufio.Writer
 
 func checkFileIsExist(filename string) bool {
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
@@ -89,13 +89,14 @@ func init() {
 		if err != nil {
 			panic(err)
 		}
-		logFile = f
+		writer = bufio.NewWriter(f)
 	} else {
 		f, err := os.Create(logFilePath) //创建文件
 		if err != nil {
 			panic(err)
 		}
-		logFile = f
+		writer = bufio.NewWriter(f)
+
 	}
 }
 
@@ -271,10 +272,10 @@ func (w *TraceWriter) flush() {
 	}
 
 	w.stats.BytesUncompressed.Add(int64(len(b)))
-	j, _ := json.Marshal(&p)
-	fmt.Fprintln(logFile, string(j))
 	w.wg.Add(1)
 	go func() {
+		j, _ := json.Marshal(&p)
+		writer.Write(j)
 		defer timing.Since("datadog.trace_agent.trace_writer.compress_ms", time.Now())
 		defer w.wg.Done()
 		p := newPayload(map[string]string{
