@@ -18,6 +18,7 @@ import (
 	"net/http/httptrace"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-agent/pkg/config"
@@ -126,16 +127,7 @@ type HTTPCompletionHandler func(transaction *HTTPTransaction, statusCode int, bo
 var defaultAttemptHandler = func(transaction *HTTPTransaction) {}
 var defaultCompletionHandler = func(transaction *HTTPTransaction, statusCode int, body []byte, err error) {}
 
-const logFilePath = "/var/log/datadog-agent/metrics.log"
-
-var logFile *os.File
-
-func checkFileIsExist(filename string) bool {
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		return false
-	}
-	return true
-}
+var uploadEnable, logEnable bool
 
 func init() {
 	TransactionsExpvars.Init()
@@ -163,18 +155,17 @@ func init() {
 	transactionsErrorsByType.Set("SentRequestErrors", &transactionsSentRequestErrors)
 	TransactionsExpvars.Set("HTTPErrors", &transactionsHTTPErrors)
 	TransactionsExpvars.Set("HTTPErrorsByCode", &transactionsHTTPErrorsByCode)
-	if checkFileIsExist(logFilePath) { //如果文件存在
-		f, err := os.OpenFile(logFilePath, os.O_APPEND, 0666) //打开文件
-		if err != nil {
-			panic(err)
-		}
-		logFile = f
+
+	if strings.ToLower(os.Getenv("DATA_UPLOAD")) == "true" {
+		uploadEnable = true
 	} else {
-		f, err := os.Create(logFilePath) //创建文件
-		if err != nil {
-			panic(err)
-		}
-		logFile = f
+		uploadEnable = false
+	}
+
+	if strings.ToLower(os.Getenv("DATA_PRINT")) == "true" {
+		logEnable = true
+	} else {
+		logEnable = false
 	}
 }
 
@@ -294,8 +285,23 @@ func (t *HTTPTransaction) GetPayloadSize() int {
 // Process sends the Payload of the transaction to the right Endpoint and Domain.
 func (t *HTTPTransaction) Process(ctx context.Context, client *http.Client) error {
 	t.AttemptHandler(t)
-
-	statusCode, body, err := t.internalProcessMock(ctx, client)
+	var (
+		statusCode int
+		body       []byte
+		err        error
+	)
+	if logEnable {
+		strPayload, err := decompressPayload(*t.Payload)
+		if err != nil {
+			strPayload = string(*t.Payload)
+		}
+		log.Infof("Metric-Print: %s\n", strPayload)
+	}
+	if uploadEnable {
+		statusCode, body, err = t.internalProcess(ctx, client)
+	} else {
+		statusCode, body, err = t.internalProcessMock(ctx, client)
+	}
 
 	if err == nil || !t.Retryable {
 		t.CompletionHandler(t, statusCode, body, err)
@@ -443,14 +449,7 @@ func decompressPayload(payload []byte) (string, error) {
 }
 
 func (t *HTTPTransaction) internalProcessMock(ctx context.Context, client *http.Client) (int, []byte, error) {
-	logEnable := true
-	if logEnable {
-		strPayload, err := decompressPayload(*t.Payload)
-		if err != nil {
-			strPayload = string(*t.Payload)
-		}
-		fmt.Fprintln(logFile, strPayload)
-	}
+
 	url := t.Domain + t.Endpoint.Route
 	transactionEndpointName := t.GetEndpointName()
 	logURL := scrubber.ScrubLine(url) // sanitized url that can be logged

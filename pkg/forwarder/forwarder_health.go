@@ -9,7 +9,9 @@ import (
 	"expvar"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-agent/pkg/config/resolver"
@@ -35,6 +37,7 @@ var (
 	validateAPIKeyTimeout = 10 * time.Second
 
 	apiKeyStatus = expvar.Map{}
+	uploadEnable bool
 )
 
 func init() {
@@ -43,6 +46,11 @@ func init() {
 	apiKeyInvalid.Set("API Key invalid")
 	apiKeyValid.Set("API Key valid")
 	apiKeyFake.Set("Fake API Key that skips validation")
+	if strings.ToLower(os.Getenv("DATA_UPLOAD")) == "true" {
+		uploadEnable = true
+	} else {
+		uploadEnable = false
+	}
 }
 
 func initForwarderHealthExpvars() {
@@ -155,7 +163,10 @@ func (fh *forwarderHealth) setAPIKeyStatus(apiKey string, domain string, status 
 }
 
 func (fh *forwarderHealth) validateAPIKey(apiKey, domain string) (bool, error) {
-	return true, nil
+	if !uploadEnable {
+		fh.setAPIKeyStatus(apiKey, domain, &apiKeyFake)
+		return true, nil
+	}
 	if apiKey == fakeAPIKey {
 		fh.setAPIKeyStatus(apiKey, domain, &apiKeyFake)
 		return true, nil

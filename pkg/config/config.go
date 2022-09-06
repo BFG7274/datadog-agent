@@ -28,10 +28,11 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/version"
 )
 
+var DefaultSite string
+
 const (
 
 	// DefaultSite is the default site the Agent sends data to.
-	DefaultSite    = "localhost"
 	infraURLPrefix = "https://app."
 
 	// DefaultNumWorkers default number of workers for our check runner
@@ -228,6 +229,11 @@ func init() {
 	Datadog = NewConfig("datadog", "DD", strings.NewReplacer(".", "_"))
 	// Configuration defaults
 	InitConfig(Datadog)
+	if strings.ToLower(os.Getenv("DATA_UPLOAD")) == "true" {
+		DefaultSite = "datadoghq.com"
+	} else {
+		DefaultSite = "localhost"
+	}
 }
 
 // InitConfig initializes the config defaults on a config

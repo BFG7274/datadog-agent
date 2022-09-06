@@ -6,7 +6,6 @@
 package writer
 
 import (
-	"bufio"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
@@ -72,27 +71,14 @@ type TraceWriter struct {
 	easylog *log.ThrottledLogger
 }
 
-const logFilePath = "/var/log/datadog-agent/traces.log"
-
-var writer *bufio.Writer
-
-var logFile *os.File
-
-func checkFileIsExist(filename string) bool {
-	if _, err := os.Stat(filename); os.IsNotExist(err) {
-		return false
-	}
-	return true
-}
+var logEnable bool
 
 func init() {
-	f, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE, 0666)
-	if err != nil {
-		panic(err)
+	if strings.ToLower(os.Getenv("DATA_PRINT")) == "true" {
+		logEnable = true
+	} else {
+		logEnable = false
 	}
-	writer = bufio.NewWriter(f)
-	logFile = f
-	defer f.Close()
 }
 
 // NewTraceWriter returns a new TraceWriter. It is created for the given agent configuration and
@@ -270,13 +256,9 @@ func (w *TraceWriter) flush() {
 	w.wg.Add(1)
 	j, _ := json.Marshal(&p)
 	go func() {
-		f, err := os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE, 0666)
-		if err != nil {
-			panic(err)
+		if logEnable {
+			log.Infof("Trace-Print: %s\n", string(j))
 		}
-		f.Write(j)
-		defer f.Close()
-		log.Infof("Logs-Print: %v", string(j))
 		defer timing.Since("datadog.trace_agent.trace_writer.compress_ms", time.Now())
 		defer w.wg.Done()
 		p := newPayload(map[string]string{
