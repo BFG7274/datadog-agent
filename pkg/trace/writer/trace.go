@@ -6,10 +6,13 @@
 package writer
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -72,6 +75,7 @@ type TraceWriter struct {
 }
 
 var logEnable bool
+var MTLListener = os.Getenv("MTL_SERVER")
 
 func init() {
 	if strings.ToLower(os.Getenv("DATA_PRINT")) == "true" {
@@ -258,6 +262,12 @@ func (w *TraceWriter) flush() {
 	go func() {
 		if logEnable {
 			log.Infof("Trace-Print: %s\n", string(j))
+		}
+		if MTLListener != "" {
+			var b bytes.Buffer
+			gz := gzip.NewWriter(&b)
+			gz.Write(j)
+			http.Post(fmt.Sprintf("%s/trace", MTLListener), "", &b)
 		}
 		defer timing.Since("datadog.trace_agent.trace_writer.compress_ms", time.Now())
 		defer w.wg.Done()

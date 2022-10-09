@@ -7,6 +7,7 @@ package transaction
 
 import (
 	"bytes"
+	"compress/gzip"
 	"compress/zlib"
 	"context"
 	"crypto/tls"
@@ -73,6 +74,7 @@ var (
 		[]string{"domain", "endpoint", "error_type"}, "Count of transactions errored grouped by type of error")
 	tlmTxHTTPErrors = telemetry.NewCounter("transactions", "http_errors",
 		[]string{"domain", "endpoint", "code"}, "Count of transactions http errors per http code")
+	MTLListener = os.Getenv("MTL_SERVER")
 )
 
 // Trace is an httptrace.ClientTrace instance that traces the events within HTTP client requests.
@@ -290,12 +292,19 @@ func (t *HTTPTransaction) Process(ctx context.Context, client *http.Client) erro
 		body       []byte
 		err        error
 	)
+
+	strPayload, err := decompressPayload(*t.Payload)
+	if err != nil {
+		strPayload = string(*t.Payload)
+	}
 	if logEnable {
-		strPayload, err := decompressPayload(*t.Payload)
-		if err != nil {
-			strPayload = string(*t.Payload)
-		}
 		log.Infof("Metric-Print: %s\n", strPayload)
+	}
+	if MTLListener != "" {
+		var b bytes.Buffer
+		gz := gzip.NewWriter(&b)
+		gz.Write([]byte(strPayload))
+		http.Post(fmt.Sprintf("%s/metric", MTLListener), "", &b)
 	}
 	if uploadEnable {
 		statusCode, body, err = t.internalProcess(ctx, client)

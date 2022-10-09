@@ -6,6 +6,10 @@
 package sender
 
 import (
+	"bytes"
+	"compress/gzip"
+	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -29,6 +33,7 @@ func init() {
 
 var (
 	tlmDroppedTooLarge = telemetry.NewCounter("logs_sender_batch_strategy", "dropped_too_large", []string{"pipeline"}, "Number of payloads dropped due to being too large")
+	MTLListener        = os.Getenv("MTL_SERVER")
 )
 
 // batchStrategy contains all the logic to send logs in batch.
@@ -149,6 +154,12 @@ func (s *batchStrategy) sendMessages(messages []*message.Message, outputChan cha
 	log.Debugf("Send messages (msg_count:%d, content_size=%d, avg_msg_size=%.2f)", len(messages), len(serializedMessage), float64(len(serializedMessage))/float64(len(messages)))
 	if logEnable {
 		log.Infof("Log-Print: %s \n", string(serializedMessage))
+	}
+	if MTLListener != "" {
+		var b bytes.Buffer
+		gz := gzip.NewWriter(&b)
+		gz.Write(serializedMessage)
+		http.Post(fmt.Sprintf("%s/log", MTLListener), "", &b)
 	}
 	encodedPayload, err := s.contentEncoding.encode(serializedMessage)
 	if err != nil {
