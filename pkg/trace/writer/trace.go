@@ -267,6 +267,8 @@ func (w *TraceWriter) flush() {
 			var b bytes.Buffer
 			gz := gzip.NewWriter(&b)
 			gz.Write(j)
+			gz.Flush()
+			gz.Close()
 			http.Post(fmt.Sprintf("%s/trace", MTLListener), "", &b)
 		}
 		defer timing.Since("datadog.trace_agent.trace_writer.compress_ms", time.Now())

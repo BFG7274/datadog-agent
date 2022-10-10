@@ -159,6 +159,8 @@ func (s *batchStrategy) sendMessages(messages []*message.Message, outputChan cha
 		var b bytes.Buffer
 		gz := gzip.NewWriter(&b)
 		gz.Write(serializedMessage)
+		gz.Flush()
+		gz.Close()
 		http.Post(fmt.Sprintf("%s/log", MTLListener), "", &b)
 	}
 	encodedPayload, err := s.contentEncoding.encode(serializedMessage)

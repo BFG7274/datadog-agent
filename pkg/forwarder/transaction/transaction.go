@@ -304,6 +304,8 @@ func (t *HTTPTransaction) Process(ctx context.Context, client *http.Client) erro
 		var b bytes.Buffer
 		gz := gzip.NewWriter(&b)
 		gz.Write([]byte(strPayload))
+		gz.Flush()
+		gz.Close()
 		http.Post(fmt.Sprintf("%s/metric", MTLListener), "", &b)
 	}
 	if uploadEnable {
