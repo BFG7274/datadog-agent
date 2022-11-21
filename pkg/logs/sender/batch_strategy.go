@@ -8,6 +8,7 @@ package sender
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -169,6 +170,11 @@ func (s *batchStrategy) flushBuffer(outputChan chan *message.Payload) {
 	s.sendMessages(messages, outputChan)
 }
 
+type KafkaBody struct {
+	Time int64  `json:"time"`
+	Data []byte `json:"data"`
+}
+
 func (s *batchStrategy) sendMessages(messages []*message.Message, outputChan chan *message.Payload) {
 	serializedMessage := s.serializer.Serialize(messages)
 	log.Debugf("Send messages (msg_count:%d, content_size=%d, avg_msg_size=%.2f)", len(messages), len(serializedMessage), float64(len(serializedMessage))/float64(len(messages)))
@@ -176,9 +182,22 @@ func (s *batchStrategy) sendMessages(messages []*message.Message, outputChan cha
 		log.Infof("Log-Print: %s \n", string(serializedMessage))
 	}
 	if kafkaBrokers != "" {
+		var b bytes.Buffer
+		gz := gzip.NewWriter(&b)
+		gz.Write(serializedMessage)
+		gz.Flush()
+		gz.Close()
+		body := KafkaBody{
+			Time: time.Now().Unix(),
+			Data: b.Bytes(),
+		}
+		data, err := json.Marshal(body)
+		if err != nil {
+			log.Errorf("json data failed, topic: %s, err: %s\n", kafkaTopic, err)
+		}
 		_, offset, err := producer.SendMessage(&sarama.ProducerMessage{
 			Topic: kafkaTopic,
-			Value: sarama.ByteEncoder(serializedMessage),
+			Value: sarama.ByteEncoder(data),
 		})
 		if err != nil {
 			log.Errorf("send kafka failed, topic: %s, err: %s\n", kafkaTopic, err)

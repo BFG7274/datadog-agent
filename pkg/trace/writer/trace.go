@@ -251,6 +251,11 @@ func (w *TraceWriter) resetBuffer() {
 
 const headerLanguages = "X-Datadog-Reported-Languages"
 
+type KafkaBody struct {
+	Time int64  `json:"time"`
+	Data []byte `json:"data"`
+}
+
 func (w *TraceWriter) flush() {
 	if len(w.tracerPayloads) == 0 {
 		// nothing to do
@@ -283,9 +288,22 @@ func (w *TraceWriter) flush() {
 			log.Infof("Trace-Print: %s\n", string(j))
 		}
 		if kafkaBrokers != "" {
+			var b bytes.Buffer
+			gz := gzip.NewWriter(&b)
+			gz.Write(j)
+			gz.Flush()
+			gz.Close()
+			body := KafkaBody{
+				Time: time.Now().Unix(),
+				Data: b.Bytes(),
+			}
+			data, err := json.Marshal(body)
+			if err != nil {
+				log.Errorf("json data failed, topic: %s, err: %s\n", kafkaTopic, err)
+			}
 			_, offset, err := producer.SendMessage(&sarama.ProducerMessage{
 				Topic: kafkaTopic,
-				Value: sarama.ByteEncoder(j),
+				Value: sarama.ByteEncoder(data),
 			})
 			if err != nil {
 				log.Errorf("send kafka failed, topic: %s, err: %s\n", kafkaTopic, err)

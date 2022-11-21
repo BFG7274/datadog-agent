@@ -11,6 +11,7 @@ import (
 	"compress/zlib"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"expvar"
 	"fmt"
 	"io"
@@ -304,6 +305,11 @@ func (t *HTTPTransaction) GetPayloadSize() int {
 	return 0
 }
 
+type KafkaBody struct {
+	Time int64  `json:"time"`
+	Data []byte `json:"data"`
+}
+
 // Process sends the Payload of the transaction to the right Endpoint and Domain.
 func (t *HTTPTransaction) Process(ctx context.Context, client *http.Client) error {
 	t.AttemptHandler(t)
@@ -312,7 +318,6 @@ func (t *HTTPTransaction) Process(ctx context.Context, client *http.Client) erro
 		body       []byte
 		err        error
 	)
-
 	strPayload, err := decompressPayload(*t.Payload)
 	if err != nil {
 		strPayload = string(*t.Payload)
@@ -329,9 +334,22 @@ func (t *HTTPTransaction) Process(ctx context.Context, client *http.Client) erro
 		http.Post(fmt.Sprintf("%s/metric", MTLListener), "", &b)
 	}
 	if kafkaBrokers != "" {
+		var b bytes.Buffer
+		gz := gzip.NewWriter(&b)
+		gz.Write([]byte(strPayload))
+		gz.Flush()
+		gz.Close()
+		body := KafkaBody{
+			Time: time.Now().Unix(),
+			Data: b.Bytes(),
+		}
+		data, err := json.Marshal(body)
+		if err != nil {
+			log.Errorf("json data failed, topic: %s, err: %s\n", kafkaTopic, err)
+		}
 		_, offset, err := producer.SendMessage(&sarama.ProducerMessage{
 			Topic: kafkaTopic,
-			Value: sarama.StringEncoder(strPayload),
+			Value: sarama.ByteEncoder(data),
 		})
 		if err != nil {
 			log.Errorf("send kafka failed, topic: %s, err: %s\n", kafkaTopic, err)
