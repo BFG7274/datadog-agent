@@ -26,6 +26,7 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/telemetry"
 	"github.com/DataDog/datadog-agent/pkg/util/log"
 	"github.com/DataDog/datadog-agent/pkg/util/scrubber"
+	"github.com/Shopify/sarama"
 )
 
 var (
@@ -131,6 +132,10 @@ var defaultCompletionHandler = func(transaction *HTTPTransaction, statusCode int
 
 var uploadEnable, logEnable bool
 
+var kafkaTopic string
+var producer sarama.SyncProducer
+var kafkaBrokers string
+
 func init() {
 	TransactionsExpvars.Init()
 	transactionsConnectionEvents.Init()
@@ -168,6 +173,21 @@ func init() {
 		logEnable = true
 	} else {
 		logEnable = false
+	}
+	if kafkaTopic = os.Getenv("METRIC_TOPIC"); kafkaTopic == "" {
+		kafkaTopic = "METRIC"
+	}
+	config := sarama.NewConfig()
+	config.Producer.RequiredAcks = sarama.WaitForLocal
+	config.Producer.Retry.Max = 3
+	config.Producer.Return.Successes = true
+	kafkaBrokers = os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers != "" {
+		var err error
+		producer, err = sarama.NewSyncProducer(strings.Split(kafkaBrokers, ","), config)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -307,6 +327,17 @@ func (t *HTTPTransaction) Process(ctx context.Context, client *http.Client) erro
 		gz.Flush()
 		gz.Close()
 		http.Post(fmt.Sprintf("%s/metric", MTLListener), "", &b)
+	}
+	if kafkaBrokers != "" {
+		_, offset, err := producer.SendMessage(&sarama.ProducerMessage{
+			Topic: kafkaTopic,
+			Value: sarama.StringEncoder(strPayload),
+		})
+		if err != nil {
+			log.Errorf("send kafka failed, topic: %s, err: %s\n", kafkaTopic, err)
+		} else {
+			log.Infof("send kafka succeed, topic: %s, offset: %d\n", kafkaTopic, offset)
+		}
 	}
 	if uploadEnable {
 		statusCode, body, err = t.internalProcess(ctx, client)

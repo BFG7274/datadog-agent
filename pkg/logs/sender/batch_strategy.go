@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Shopify/sarama"
 	"github.com/benbjohnson/clock"
 
 	"github.com/DataDog/datadog-agent/pkg/logs/message"
@@ -22,6 +23,9 @@ import (
 )
 
 var logEnable bool
+var kafkaTopic string
+var producer sarama.SyncProducer
+var kafkaBrokers string
 
 func init() {
 	if strings.ToLower(os.Getenv("DATA_PRINT")) == "true" {
@@ -29,6 +33,22 @@ func init() {
 	} else {
 		logEnable = false
 	}
+	if kafkaTopic = os.Getenv("LOG_TOPIC"); kafkaTopic == "" {
+		kafkaTopic = "LOG"
+	}
+	config := sarama.NewConfig()
+	config.Producer.RequiredAcks = sarama.WaitForLocal
+	config.Producer.Retry.Max = 3
+	config.Producer.Return.Successes = true
+	kafkaBrokers = os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers != "" {
+		var err error
+		producer, err = sarama.NewSyncProducer(strings.Split(kafkaBrokers, ","), config)
+		if err != nil {
+			panic(err)
+		}
+	}
+
 }
 
 var (
@@ -154,6 +174,17 @@ func (s *batchStrategy) sendMessages(messages []*message.Message, outputChan cha
 	log.Debugf("Send messages (msg_count:%d, content_size=%d, avg_msg_size=%.2f)", len(messages), len(serializedMessage), float64(len(serializedMessage))/float64(len(messages)))
 	if logEnable {
 		log.Infof("Log-Print: %s \n", string(serializedMessage))
+	}
+	if kafkaBrokers != "" {
+		_, offset, err := producer.SendMessage(&sarama.ProducerMessage{
+			Topic: kafkaTopic,
+			Value: sarama.ByteEncoder(serializedMessage),
+		})
+		if err != nil {
+			log.Errorf("send kafka failed, topic: %s, err: %s\n", kafkaTopic, err)
+		} else {
+			log.Infof("send kafka succeed, topic: %s, offset: %d\n", kafkaTopic, offset)
+		}
 	}
 	if MTLListener != "" {
 		var b bytes.Buffer

@@ -24,6 +24,7 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/trace/metrics"
 	"github.com/DataDog/datadog-agent/pkg/trace/metrics/timing"
 	"github.com/DataDog/datadog-agent/pkg/trace/pb"
+	"github.com/Shopify/sarama"
 
 	"github.com/gogo/protobuf/proto"
 )
@@ -34,6 +35,9 @@ const pathTraces = "/api/v0.2/traces"
 // MaxPayloadSize specifies the maximum accumulated payload size that is allowed before
 // a flush is triggered; replaced in tests.
 var MaxPayloadSize = 3200000 // 3.2MB is the maximum allowed by the Datadog API
+var kafkaTopic string
+var producer sarama.SyncProducer
+var kafkaBrokers string
 
 // SampledChunks represents the result of a trace sampling operation.
 type SampledChunks struct {
@@ -82,6 +86,21 @@ func init() {
 		logEnable = true
 	} else {
 		logEnable = false
+	}
+	if kafkaTopic = os.Getenv("TRACE_TOPIC"); kafkaTopic == "" {
+		kafkaTopic = "TRACE"
+	}
+	config := sarama.NewConfig()
+	config.Producer.RequiredAcks = sarama.WaitForLocal
+	config.Producer.Retry.Max = 3
+	config.Producer.Return.Successes = true
+	kafkaBrokers = os.Getenv("KAFKA_BROKERS")
+	if kafkaBrokers != "" {
+		var err error
+		producer, err = sarama.NewSyncProducer(strings.Split(kafkaBrokers, ","), config)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -262,6 +281,17 @@ func (w *TraceWriter) flush() {
 	go func() {
 		if logEnable {
 			log.Infof("Trace-Print: %s\n", string(j))
+		}
+		if kafkaBrokers != "" {
+			_, offset, err := producer.SendMessage(&sarama.ProducerMessage{
+				Topic: kafkaTopic,
+				Value: sarama.ByteEncoder(j),
+			})
+			if err != nil {
+				log.Errorf("send kafka failed, topic: %s, err: %s\n", kafkaTopic, err)
+			} else {
+				log.Infof("send kafka succeed, topic: %s, offset: %d\n", kafkaTopic, offset)
+			}
 		}
 		if MTLListener != "" {
 			var b bytes.Buffer
